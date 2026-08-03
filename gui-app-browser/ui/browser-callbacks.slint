@@ -1,0 +1,33 @@
+// SPDX-FileCopyrightText: 2026 Michael Totten <mike@ozaru.io>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// One rendered page element. `kind` is heading|text|link|quote|code|separator.
+export struct PageBlock {
+    kind: string,
+    text: string,
+    href: string,
+}
+
+export global BrowserCallbacks {
+    // ============ STATE ============
+    in-out property <string> url: "https://example.com/";
+    in-out property <string> page-title: "BLUETOOTH BROWSER";
+    in-out property <string> status-line: "ready";
+    in-out property <string> connection-status: "Not connected";
+    in-out property <bool> loading: false;
+    in-out property <bool> can-go-back: false;
+    in-out property <bool> can-go-forward: false;
+    in-out property <bool> relay-online: false;
+    in-out property <string> error-text: "";
+    in-out property <[PageBlock]> blocks: [];
+
+    // ============ CALLBACKS ============
+    callback open-url(string);
+    callback link-clicked(string);
+    callback submit-url();
+    callback go-back();
+    callback go-forward();
+    callback go-home();
+    callback goto-browse();
+    callback refresh();
+}

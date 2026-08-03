@@ -1,0 +1,16 @@
+manifestVersion = "0"
+# Random 16-byte appId (name is 17 ASCII chars — too long for the 32-hex
+# ASCII encoding, so we use a random id like other long-named apps).
+appId = "0x0f17b7ae9cc21a979599d2deeb0b11a9"
+
+[appName]
+en = "BLUETOOTH BROWSER"
+
+[permissions]
+template = ["gui-app"]
+"os/quantum-link" = [
+    "SendAccountUpdate",
+    "SubscribeAccountUpdate",
+    "SubscribeConnectionStatus",
+    "SubscribePairingEvent",
+]

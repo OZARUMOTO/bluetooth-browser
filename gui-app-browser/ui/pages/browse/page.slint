@@ -1,0 +1,86 @@
+// SPDX-FileCopyrightText: 2026 Michael Totten <mike@ozaru.io>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { BrowserCallbacks as CB } from "../../browser-callbacks.slint";
+import { BasePage } from "@ui/widgets.slint";
+
+export component BrowsePage inherits BasePage {
+    VerticalLayout {
+        padding: 4px; spacing: 3px;
+
+        // Header: back / forward / home
+        HorizontalLayout { height: 20px; spacing: 3px;
+            Rectangle {
+                width: 52px;
+                background: CB.can-go-back ? #160014 : #0a0009; border-radius: 2px; border-width: 1px; border-color: #4a0040;
+                Text { text: "←"; color: CB.can-go-back ? #ff4fa3 : #444; font-size: 12px;
+                    horizontal-alignment: center; vertical-alignment: center; }
+                TouchArea { enabled: CB.can-go-back; clicked => { CB.go-back(); } }
+            }
+            Rectangle {
+                width: 52px;
+                background: CB.can-go-forward ? #160014 : #0a0009; border-radius: 2px; border-width: 1px; border-color: #4a0040;
+                Text { text: "→"; color: CB.can-go-forward ? #ff4fa3 : #444; font-size: 12px;
+                    horizontal-alignment: center; vertical-alignment: center; }
+                TouchArea { enabled: CB.can-go-forward; clicked => { CB.go-forward(); } }
+            }
+            Rectangle {
+                background: #160014; border-radius: 2px; border-width: 1px; border-color: #4a0040;
+                Text { text: "⌂"; color: #ff4fa3; font-size: 12px;
+                    horizontal-alignment: center; vertical-alignment: center; }
+                TouchArea { clicked => { CB.go-home(); } }
+            }
+        }
+
+        // Address bar + GO
+        HorizontalLayout { height: 24px; spacing: 3px;
+            Rectangle {
+                background: #000; border-radius: 2px; border-width: 1px; border-color: #4a0040;
+                TextInput {
+                    text: CB.url; color: #ddd; font-size: 10px;
+                    edited => { CB.url = self.text; }
+                }
+            }
+            Rectangle {
+                width: 44px;
+                background: #2a0024; border-radius: 2px; border-width: 1px; border-color: #6a0054;
+                Text { text: "GO"; color: #ff4fa3; font-size: 11px; font-weight: 700;
+                    horizontal-alignment: center; vertical-alignment: center; }
+                TouchArea { clicked => { CB.submit-url(); } }
+            }
+        }
+
+        Text { text: CB.status-line; color: #888; font-size: 9px; }
+
+        if CB.loading : Rectangle {
+            height: 14px; background: #221100; border-radius: 2px;
+            Text { text: "… loading"; color: #ffaa00; font-size: 9px;
+                horizontal-alignment: center; vertical-alignment: center; }
+        }
+
+        if CB.error-text != "" : Text { text: CB.error-text; color: #f55; font-size: 9px; wrap: word-wrap; }
+
+        // Page content
+        Rectangle {
+            background: #000; border-radius: 2px; border-width: 1px; border-color: #333;
+            VerticalLayout { padding: 3px;
+                Flickable {
+                    VerticalLayout { spacing: 4px; padding: 2px;
+                        for pg in CB.blocks: Rectangle {
+                            VerticalLayout { spacing: 2px;
+                                Text {
+                                    text: pg.kind == "link" ? "→ " + pg.text : pg.kind == "quote" ? "❝ " + pg.text : pg.text;
+                                    color: pg.kind == "heading" ? #ffaa00 : pg.kind == "link" ? #4fc3ff : pg.kind == "quote" ? #9a9 : pg.kind == "code" ? #7fbf7f : pg.kind == "separator" ? #333 : #ccc;
+                                    font-size: pg.kind == "heading" ? 13px : pg.kind == "code" ? 9px : pg.kind == "separator" ? 9px : 10px;
+                                    font-weight: pg.kind == "heading" ? 800 : 400;
+                                    wrap: word-wrap;
+                                }
+                            }
+                            if pg.kind == "link" : TouchArea { clicked => { CB.link-clicked(pg.href); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

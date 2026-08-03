@@ -1,0 +1,70 @@
+// SPDX-FileCopyrightText: 2026 Michael Totten <mike@ozaru.io>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { BrowserCallbacks as CB } from "../../browser-callbacks.slint";
+import { BasePage } from "@ui/widgets.slint";
+
+export component HomePage inherits BasePage {
+    VerticalLayout {
+        padding: 4px; spacing: 4px;
+
+        // Title bar
+        Rectangle {
+            height: 24px; background: #160014; border-radius: 2px;
+            VerticalLayout { padding: 2px;
+                Text {
+                    text: "🌐 BLUETOOTH BROWSER";
+                    color: #4fc3ff; font-size: 13px; font-weight: 800;
+                }
+            }
+        }
+
+        // Connection status card
+        Rectangle {
+            background: #000; border-radius: 2px; border-width: 1px; border-color: #3a0033;
+            VerticalLayout { padding: 4px; spacing: 2px;
+                Text { text: "Web over Bluetooth — the Passport fetches through your surf-relay gateway."; color: #888; font-size: 9px; wrap: word-wrap; }
+                Text { text: "🔗 " + CB.connection-status; color: #0f0; font-size: 9px; }
+                Text { text: "📡 relay: " + (CB.relay-online ? "online" : "offline — demo mode"); color: #ffaa00; font-size: 9px; }
+            }
+        }
+
+        // Quick links
+        Rectangle {
+            background: #000; border-radius: 2px; border-width: 1px; border-color: #333;
+            VerticalLayout { padding: 4px; spacing: 3px;
+                Text { text: "Try a link:"; color: #888; font-size: 9px; }
+                Rectangle {
+                    height: 18px; background: #00122a; border-radius: 2px; border-width: 1px; border-color: #004a80;
+                    Text { text: "→ example.com"; color: #4fc3ff; font-size: 10px; vertical-alignment: center; }
+                    TouchArea { clicked => { CB.open-url("https://example.com/"); } }
+                }
+                Rectangle {
+                    height: 18px; background: #00122a; border-radius: 2px; border-width: 1px; border-color: #004a80;
+                    Text { text: "→ IANA example page"; color: #4fc3ff; font-size: 10px; vertical-alignment: center; }
+                    TouchArea { clicked => { CB.open-url("https://www.iana.org/domains/example"); } }
+                }
+                Rectangle {
+                    height: 18px; background: #00122a; border-radius: 2px; border-width: 1px; border-color: #004a80;
+                    Text { text: "→ bitcoin.org"; color: #4fc3ff; font-size: 10px; vertical-alignment: center; }
+                    TouchArea { clicked => { CB.open-url("https://bitcoin.org/"); } }
+                }
+                Rectangle {
+                    height: 18px; background: #00122a; border-radius: 2px; border-width: 1px; border-color: #004a80;
+                    Text { text: "→ surf-relay README"; color: #4fc3ff; font-size: 10px; vertical-alignment: center; }
+                    TouchArea { clicked => { CB.open-url("https://github.com/OZARUMOTO/bluetooth-browser"); } }
+                }
+            }
+        }
+
+        // Open browser
+        Rectangle {
+            height: 22px; background: #221100; border-radius: 2px; border-width: 1px; border-color: #553300;
+            Text { text: "OPEN BROWSER"; color: #ffaa00; font-size: 11px; font-weight: 700;
+                horizontal-alignment: center; vertical-alignment: center; }
+            TouchArea { clicked => { CB.goto-browse(); } }
+        }
+
+        Text { text: "Other KeyOS apps open their web content in this browser — one shared, safe web surface."; color: #555; font-size: 8px; wrap: word-wrap; }
+    }
+}
