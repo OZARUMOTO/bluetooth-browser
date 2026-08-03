@@ -474,11 +474,22 @@ class RelayHttpHandler(http.server.BaseHTTPRequestHandler):
     /broadcast and gets the broadcast-result JSON back, so the real-hardware
     flow (device -> BLE -> companion -> this -> your node) needs no TCP."""
 
+    MAX_BODY = 2 * 1024 * 1024  # a signed PSBT is a few KB; refuse absurd bodies
+
     def do_POST(self):
         if self.path != "/broadcast":
             self._reply({"error": "not found"}, status=404)
             return
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._reply({"type": "broadcast-result", "id": "",
+                         "txid": None, "error": "bad content-length"}, status=400)
+            return
+        if length > self.MAX_BODY:
+            self._reply({"type": "broadcast-result", "id": "",
+                         "txid": None, "error": "body too large"}, status=413)
+            return
         try:
             msg = json.loads(self.rfile.read(length) or b"{}")
         except ValueError:
