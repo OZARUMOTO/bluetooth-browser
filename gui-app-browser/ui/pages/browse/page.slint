@@ -70,9 +70,9 @@ export component BrowsePage inherits BasePage {
                             VerticalLayout { spacing: 2px;
                                 Text {
                                     text: pg.kind == "link" ? "→ " + pg.text : pg.kind == "quote" ? "❝ " + pg.text : pg.text;
-                                    color: pg.kind.startsWith("heading") ? #ffaa00 : pg.kind == "link" ? #4fc3ff : pg.kind == "quote" ? #9a9 : pg.kind == "code" ? #7fbf7f : pg.kind == "separator" ? #333 : #ccc;
-                                    font-size: pg.kind.startsWith("heading") ? 13px : pg.kind == "code" ? 9px : pg.kind == "separator" ? 9px : 10px;
-                                    font-weight: pg.kind.startsWith("heading") ? 800 : 400;
+                                    color: pg.kind == "heading" ? #ffaa00 : pg.kind == "link" ? #4fc3ff : pg.kind == "quote" ? #9a9 : pg.kind == "code" ? #7fbf7f : pg.kind == "separator" ? #333 : #ccc;
+                                    font-size: pg.kind == "heading" ? 13px : pg.kind == "code" ? 9px : pg.kind == "separator" ? 9px : 10px;
+                                    font-weight: pg.kind == "heading" ? 800 : 400;
                                     wrap: word-wrap;
                                 }
                             }

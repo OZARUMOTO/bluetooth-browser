@@ -479,7 +479,14 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                         let converted: Vec<Block> = blocks
                             .iter()
                             .map(|b| Block {
-                                kind: b.kind.clone(),
+                                // Normalize relay kinds (heading-1..heading-6)
+                                // to the single `heading` kind the renderer
+                                // understands.
+                                kind: if b.kind.starts_with("heading-") {
+                                    "heading".to_string()
+                                } else {
+                                    b.kind.clone()
+                                },
                                 text: b.text.clone(),
                                 href: b.href.clone(),
                             })
