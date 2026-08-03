@@ -78,7 +78,7 @@ def start_fake_node():
 
 
 def start_relay(rpc_url, cookie_path, reject_on=()):
-    """Start surf_relay in-process. Returns (server, port, stop_fn)."""
+    """Start surf_relay in-process (TCP + HTTP). Returns (server, port, http_port)."""
     server = surf_relay.RelayServer(
         ("127.0.0.1", 0), surf_relay.RelayHandler,
         opener=surf_relay.build_opener(None),
@@ -87,7 +87,13 @@ def start_relay(rpc_url, cookie_path, reject_on=()):
     )
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server, port
+    httpd = surf_relay.RelayHttpServer(
+        ("127.0.0.1", 0), surf_relay.RelayHttpHandler,
+        rpc_url, cookie_path, 10,
+    )
+    http_port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return server, port, httpd, http_port
 
 
 def client_exchange(port, payload):
@@ -98,6 +104,22 @@ def client_exchange(port, payload):
     return json.loads(line)
 
 
+def http_post(http_port, payload):
+    """POST an envelope to the companion HTTP endpoint, return (status, body)."""
+    import urllib.request
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{http_port}/broadcast",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
 def write_cookie(path, user="__cookie__", password="s3cret"):
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"{user}:{password}")
@@ -106,7 +128,7 @@ def write_cookie(path, user="__cookie__", password="s3cret"):
 def run():
     results = []
 
-    server = server2 = None
+    server = server2 = httpd2 = None
     with open(os.devnull, "w") as dn:
         import contextlib
         with contextlib.redirect_stdout(dn):
@@ -114,7 +136,7 @@ def run():
             node, rpc_url = start_fake_node()
             cookie = os.path.join(HERE, ".test_cookie")
             write_cookie(cookie)
-            server, port = start_relay(rpc_url, cookie)
+            server, port, httpd, http_port = start_relay(rpc_url, cookie)
             try:
                 reply = client_exchange(port, {"type": "broadcast", "id": "12",
                                                "txhex": "02000000000101" * 8})
@@ -141,7 +163,7 @@ def run():
                 results.append("ok   node rejection surfaced")
 
                 # 4) missing cookie -> clean error
-                server2, port2 = start_relay(rpc_url, os.path.join(HERE, ".nope_cookie"))
+                server2, port2, httpd2, _p2 = start_relay(rpc_url, os.path.join(HERE, ".nope_cookie"))
                 reply = client_exchange(port2, {"type": "broadcast", "id": "15",
                                                 "txhex": "02000000000101" * 8})
                 assert reply["txid"] is None and "cookie" in reply["error"], reply
@@ -151,6 +173,40 @@ def run():
                 reply = client_exchange(port, {"type": "ping"})
                 assert reply == {"type": "pong"}, reply
                 results.append("ok   ping unaffected")
+
+                # 5b) HTTP /broadcast happy path (companion surface)
+                FakeBitcoind.reject = False
+                FakeBitcoind.finalized = False
+                status, reply = http_post(http_port, {"type": "broadcast",
+                                                      "id": "h1",
+                                                      "psbt": "cHNidP8BAH0CAAAA"})
+                assert status == 200 and reply["txid"] == FAKE_TXID, (status, reply)
+                results.append("ok   http /broadcast psbt -> txid")
+
+                # 5c) HTTP bad json -> 400
+                import urllib.request
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{http_port}/broadcast",
+                    data=b"{not json",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urllib.request.urlopen(req, timeout=10)
+                    raise AssertionError("expected 400")
+                except urllib.error.HTTPError as e:
+                    assert e.code == 400, e.code
+                results.append("ok   http bad json -> 400")
+
+                # 5d) HTTP node rejection -> 502 with the node's message
+                FakeBitcoind.reject = True
+                status, reply = http_post(http_port, {"type": "broadcast",
+                                                      "id": "h2",
+                                                      "txhex": "02000000000101" * 8})
+                assert status == 502, status
+                assert "bad-txns-inputs-missingorspent" in reply["error"], reply
+                FakeBitcoind.reject = False
+                results.append("ok   http node rejection -> 502 with node message")
 
                 # 6) PSBT path: relay sends the base64 to finalizepsbt, node
                 #    returns raw hex, relay then broadcasts it -> txid
@@ -177,13 +233,15 @@ def run():
                     server.shutdown()
                 if server2 is not None:
                     server2.shutdown()
+                if httpd2 is not None:
+                    httpd2.shutdown()
                 node.shutdown()
                 node.server_close()
                 if os.path.exists(cookie):
                     os.unlink(cookie)
 
     print("\n".join(results))
-    print(f"\n{len(results)}/7 relay broadcast checks passed")
+    print(f"\n{len(results)}/10 relay broadcast checks passed")
     return 0
 
 

@@ -42,6 +42,10 @@ exhaust device memory.
   (e.g. from **Dojo Signer**) to **your own bitcoind** over cookie auth; the
   node-confirmed txid comes back in `broadcast-result`. No third party ever
   sees the transaction.
+- **Companion HTTP surface** — `POST /broadcast` on port 8788 speaks the
+  same envelope, so the **Envoy companion** relays a device's signed PSBT to
+  your node on real hardware (sign on device → BLE → companion → relay →
+  your bitcoind).
 - **Demo mode**: without a relay (e.g., the simulator), the app still boots to
   a start page and can render sample pages so the UI is fully explorable.
 
@@ -68,6 +72,7 @@ python3 relay/surf_relay.py --self-broadcast <txhex>    # broadcast one tx via y
 # (override with --rpc-url / --rpc-cookie, or SURF_RPC_URL / SURF_RPC_COOKIE)
 # the relay binds localhost by default — use --bind 0.0.0.0 only when a
 # LAN BLE-bridge/companion needs it, behind your own firewall rules
+# companion HTTP endpoint: POST /broadcast on --http-port 8788 (0 disables)
 ```
 
 **App:** register `gui-app-browser` in the KeyOS workspace (workspace member +

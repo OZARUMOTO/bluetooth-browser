@@ -115,6 +115,32 @@ Reply:
 > the companion on hardware, so a device running only the browser will never
 > see `broadcast-result` on its channel.
 
+### 2.8 HTTP surface (companion apps): `POST /broadcast`
+
+The same envelope is exposed over plain HTTP for companion apps (which speak
+HTTP, not the device TCP protocol):
+
+```bash
+curl -s -X POST http://<relay>:8788/broadcast \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"broadcast","id":"envoy-1","psbt":"cHNidP8..."}'
+# => {"type":"broadcast-result","id":"envoy-1","txid":"...","error":null}
+```
+
+- `--http-port 8788` (default; `0` disables). Same `--rpc-url` / `--rpc-cookie`.
+- 200 = broadcast accepted (txid returned), 400 = bad request, 502 = node
+  rejected the transaction (the node's message is in `error`).
+- This is the hop used on real hardware: sign on device → BLE → companion →
+  `POST /broadcast` → relay → your bitcoind. The relay binds localhost by
+  default; open the LAN with `--bind 0.0.0.0` + a firewall rule when a phone
+  companion needs it.
+
+### 2.9 Status probe (`ping` / `pong`)
+
+The device's settings UI probes the gateway with `ping` and expects `pong` to
+show relay online/offline — the same envelope the TCP transport uses as a
+heartbeat.
+
 ### 2.7 `ready` → `broadcast` flow
 
 On hardware the relay runs on the gateway the companion fronts, so the same

@@ -31,6 +31,7 @@ Usage:
 
 import argparse
 import base64
+import http.server
 import json
 import logging
 import os
@@ -464,6 +465,71 @@ class RelayServer(socketserver.ThreadingTCPServer):
 
 
 # ---------------------------------------------------------------------------
+# HTTP endpoint (companion apps): POST /broadcast
+# ---------------------------------------------------------------------------
+
+class RelayHttpHandler(http.server.BaseHTTPRequestHandler):
+    """Companion-friendly HTTP surface over the same broadcast envelope.
+    The Envoy companion app POSTs {"psbt": <base64>} (or {"txhex": ...}) to
+    /broadcast and gets the broadcast-result JSON back, so the real-hardware
+    flow (device -> BLE -> companion -> this -> your node) needs no TCP."""
+
+    def do_POST(self):
+        if self.path != "/broadcast":
+            self._reply({"error": "not found"}, status=404)
+            return
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            msg = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            self._reply({"type": "broadcast-result", "id": "",
+                         "txid": None, "error": "bad json"}, status=400)
+            return
+        if not isinstance(msg, dict):
+            self._reply({"type": "broadcast-result", "id": "",
+                         "txid": None, "error": "bad body"}, status=400)
+            return
+        rid = str(msg.get("id", ""))
+        try:
+            txid = submit_broadcast(msg, self.server.rpc_url,
+                                    self.server.rpc_cookie,
+                                    self.server.rpc_timeout)
+            LOG.info("http broadcast ok txid=%s", txid)
+            self._reply({"type": "broadcast-result", "id": rid,
+                         "txid": txid, "error": None})
+        except RpcError as e:
+            LOG.warning("http broadcast failed: %s", e)
+            self._reply({"type": "broadcast-result", "id": rid,
+                         "txid": None, "error": str(e)},
+                        status=400 if "bad tx" in str(e) else 502)
+        except Exception as e:
+            LOG.warning("http broadcast failed: %s", e)
+            self._reply({"type": "broadcast-result", "id": rid,
+                         "txid": None, "error": str(e)}, status=502)
+
+    def _reply(self, payload: dict, status: int = 200):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+class RelayHttpServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, addr, handler, rpc_url, rpc_cookie, rpc_timeout):
+        self.rpc_url = rpc_url
+        self.rpc_cookie = rpc_cookie
+        self.rpc_timeout = rpc_timeout
+        super().__init__(addr, handler)
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser(description="surf-relay gateway for Passport Prime browser")
@@ -484,6 +550,8 @@ def main():
                     default=os.environ.get("SURF_RPC_COOKIE", os.path.expanduser("~/.bitcoin/.cookie")),
                     help="bitcoind cookie file (default: ~/.bitcoin/.cookie)")
     ap.add_argument("--rpc-timeout", type=int, default=30)
+    ap.add_argument("--http-port", type=int, default=8788,
+                    help="companion HTTP endpoint (POST /broadcast); 0 disables")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -510,8 +578,17 @@ def main():
     via = f"via Tor {args.socks}" if args.socks else "clearnet"
     LOG.info("surf-relay listening on %s:%d (%s) — broadcast node %s",
              args.bind, args.port, via, args.rpc_url)
+    servers = [server]
+    if args.http_port:
+        httpd = RelayHttpServer((args.bind, args.http_port), RelayHttpHandler,
+                                args.rpc_url, args.rpc_cookie, args.rpc_timeout)
+        servers.append(httpd)
+        LOG.info("surf-relay HTTP /broadcast on %s:%d", args.bind, args.http_port)
     try:
-        server.serve_forever()
+        import threading
+        for s in servers[1:]:
+            threading.Thread(target=s.serve_forever, daemon=True).start()
+        servers[0].serve_forever()
     except KeyboardInterrupt:
         LOG.info("bye")
 
