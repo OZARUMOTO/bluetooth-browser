@@ -468,7 +468,10 @@ class RelayServer(socketserver.ThreadingTCPServer):
 def main():
     ap = argparse.ArgumentParser(description="surf-relay gateway for Passport Prime browser")
     ap.add_argument("--port", type=int, default=8787)
-    ap.add_argument("--bind", default="0.0.0.0")
+    # Localhost by default: broadcasting is sensitive, and the simulator talks
+    # to 127.0.0.1. Only open the LAN (--bind 0.0.0.0) when a future
+    # BLE-bridge/companion needs to reach it, behind your own firewall rules.
+    ap.add_argument("--bind", default="127.0.0.1")
     ap.add_argument("--socks", default=None, help="Tor SOCKS5 proxy host:port (e.g. 127.0.0.1:9050)")
     ap.add_argument("--timeout", type=int, default=30)
     ap.add_argument("--max-bytes", type=int, default=524288)

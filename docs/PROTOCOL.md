@@ -110,6 +110,11 @@ Reply:
 - `error` — `null` on success, or a human-readable reason (bad hex, node
   unreachable, `sendrawtransaction` rejection) for the device to display.
 
+> The browser app itself only consumes `page` / `open-url` — `broadcast` is a
+> gateway-side extension used by other KeyOS apps (e.g. Dojo Signer) and by
+> the companion on hardware, so a device running only the browser will never
+> see `broadcast-result` on its channel.
+
 ### 2.7 `ready` → `broadcast` flow
 
 On hardware the relay runs on the gateway the companion fronts, so the same

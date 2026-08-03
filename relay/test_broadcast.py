@@ -106,6 +106,7 @@ def write_cookie(path, user="__cookie__", password="s3cret"):
 def run():
     results = []
 
+    server = server2 = None
     with open(os.devnull, "w") as dn:
         import contextlib
         with contextlib.redirect_stdout(dn):
@@ -172,10 +173,14 @@ def run():
                 assert "incomplete" in reply["error"], reply
                 results.append("ok   incomplete psbt -> clean error")
             finally:
-                server.shutdown()
-                server2.shutdown()
+                if server is not None:
+                    server.shutdown()
+                if server2 is not None:
+                    server2.shutdown()
                 node.shutdown()
-                os.unlink(cookie)
+                node.server_close()
+                if os.path.exists(cookie):
+                    os.unlink(cookie)
 
     print("\n".join(results))
     print(f"\n{len(results)}/7 relay broadcast checks passed")

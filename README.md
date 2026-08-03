@@ -60,12 +60,14 @@ exhaust device memory.
 **Relay (any machine with python3):**
 
 ```bash
-python3 relay/surf_relay.py --port 8787                 # clearnet
+python3 relay/surf_relay.py --port 8787                 # clearnet (binds 127.0.0.1)
 python3 relay/surf_relay.py --socks 127.0.0.1:9050      # through Tor
 python3 relay/surf_relay.py --self-test https://example.com
 python3 relay/surf_relay.py --self-broadcast <txhex>    # broadcast one tx via your node
 # defaults for the broadcast node: http://127.0.0.1:8332 + ~/.bitcoin/.cookie
 # (override with --rpc-url / --rpc-cookie, or SURF_RPC_URL / SURF_RPC_COOKIE)
+# the relay binds localhost by default — use --bind 0.0.0.0 only when a
+# LAN BLE-bridge/companion needs it, behind your own firewall rules
 ```
 
 **App:** register `gui-app-browser` in the KeyOS workspace (workspace member +
