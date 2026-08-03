@@ -57,10 +57,7 @@ class BlockBuilder(HTMLParser):
         self._skip_depth = 0          # >0 while inside <script>/<style>
         self._text_buf: list[str] = []
         self._cur_heading: str | None = None   # e.g. "heading-1" when inside an h1
-        self._in_anchor = False
-        self._anchor_href = None
         self._pending_link: dict | None = None
-        self._in_li = False
         self._in_pre = False
         self._in_quote = False
         self._in_title = False
@@ -79,7 +76,12 @@ class BlockBuilder(HTMLParser):
             self._cur_heading = None
             return
         if kind is None:
-            kind = self._cur_heading or "text"
+            if self._cur_heading is not None:
+                kind = self._cur_heading
+            elif self._in_quote:
+                kind = "quote"
+            else:
+                kind = "text"
         self._cur_heading = None
         if self._pending_link is not None:
             # Text belonging to an <a>: emit as a link block.
@@ -151,7 +153,6 @@ class BlockBuilder(HTMLParser):
             return
         if tag == "li":
             self._flush_text()
-            self._in_li = True
             return
         if tag == "ul":
             self._flush_text()
@@ -194,7 +195,6 @@ class BlockBuilder(HTMLParser):
             return
         if tag == "li":
             self._flush_text()
-            self._in_li = False
             return
 
     def handle_data(self, data):

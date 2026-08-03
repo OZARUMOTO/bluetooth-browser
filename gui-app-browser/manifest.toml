@@ -11,6 +11,5 @@ template = ["gui-app"]
 "os/quantum-link" = [
     "SendAccountUpdate",
     "SubscribeAccountUpdate",
-    "SubscribeConnectionStatus",
     "SubscribePairingEvent",
 ]

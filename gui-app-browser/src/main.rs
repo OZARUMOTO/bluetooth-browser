@@ -361,15 +361,23 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
     }
 
     // ---- Back / forward / refresh ----
+    // Locks are always acquired HISTORY-then-HISTORY_INDEX (same order as
+    // push_history/sync_nav_state) and dropped before any UI call.
     {
         let ui_weak = ui_weak.clone();
         ui.global::<BrowserCallbacks>().on_go_back(move || {
             let ui = ui_weak.unwrap();
-            let mut idx = HISTORY_INDEX.lock().unwrap();
-            if *idx > 0 {
-                *idx -= 1;
-                let url = HISTORY.lock().unwrap()[*idx].clone();
-                drop(idx);
+            let url = {
+                let hist = HISTORY.lock().unwrap();
+                let mut idx = HISTORY_INDEX.lock().unwrap();
+                if *idx == 0 {
+                    None
+                } else {
+                    *idx -= 1;
+                    Some(hist[*idx].clone())
+                }
+            };
+            if let Some(url) = url {
                 request_page(&ui, &url, false);
             }
         });
@@ -378,12 +386,17 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let ui_weak = ui_weak.clone();
         ui.global::<BrowserCallbacks>().on_go_forward(move || {
             let ui = ui_weak.unwrap();
-            let mut idx = HISTORY_INDEX.lock().unwrap();
-            let len = HISTORY.lock().unwrap().len();
-            if *idx + 1 < len {
-                *idx += 1;
-                let url = HISTORY.lock().unwrap()[*idx].clone();
-                drop(idx);
+            let url = {
+                let hist = HISTORY.lock().unwrap();
+                let mut idx = HISTORY_INDEX.lock().unwrap();
+                if *idx + 1 < hist.len() {
+                    *idx += 1;
+                    Some(hist[*idx].clone())
+                } else {
+                    None
+                }
+            };
+            if let Some(url) = url {
                 request_page(&ui, &url, false);
             }
         });
@@ -436,12 +449,15 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                 if update.account_id != CHANNEL {
                     continue;
                 }
-                *RELAY_CONTACTED.lock().unwrap() = true;
-                ui.global::<BrowserCallbacks>().set_relay_online(true);
-                ui.global::<BrowserCallbacks>().set_connection_status("Relay connected".into());
 
                 match serde_json::from_slice::<RelayEnvelope>(&update.update) {
                     Ok(RelayEnvelope::Page { title, url, status, blocks, error, .. }) => {
+                        // Only a well-formed relay envelope marks the relay as
+                        // contacted — garbage can't kill offline demo mode.
+                        *RELAY_CONTACTED.lock().unwrap() = true;
+                        ui.global::<BrowserCallbacks>().set_relay_online(true);
+                        ui.global::<BrowserCallbacks>()
+                            .set_connection_status("Relay connected".into());
                         ui.global::<BrowserCallbacks>().set_loading(true);
                         if let Some(err) = error {
                             log::warn!("⚠️ relay error for {}: {}", url, err);
@@ -474,6 +490,10 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
                     }
                     Ok(RelayEnvelope::OpenUrl { url }) => {
                         log::info!("🔀 open-url push: {}", url);
+                        *RELAY_CONTACTED.lock().unwrap() = true;
+                        ui.global::<BrowserCallbacks>().set_relay_online(true);
+                        ui.global::<BrowserCallbacks>()
+                            .set_connection_status("Relay connected".into());
                         request_page(&ui, &url, true);
                         ui.global::<Navigate>().invoke_browse(NavigateOptions {
                             replace: false,
