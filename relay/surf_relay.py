@@ -16,15 +16,24 @@ Transport today: TCP, one JSON envelope per line (newline-delimited) — the
 exact interface a future BLE bridge (Web Bluetooth or a phone daemon) will
 front-end. On real hardware the relay runs on any gateway with BLE + internet.
 
+It also carries signed transactions: a `broadcast` envelope (a raw tx hex)
+is submitted to a Bitcoin node — by default your own bitcoind on
+127.0.0.1:8332 using cookie auth — and the resulting txid is returned in a
+`broadcast-result` envelope. No third party ever touches the transaction.
+
 Usage:
     python3 surf_relay.py --port 8787                 # clearnet gateway
     python3 surf_relay.py --socks 127.0.0.1:9050      # everything via Tor
     python3 surf_relay.py --self-test https://example.com   # one-shot fetch+convert
+    python3 surf_relay.py --self-broadcast <txhex>          # one-shot broadcast via your node
+    python3 surf_relay.py --rpc-url http://127.0.0.1:8332 --rpc-cookie ~/.bitcoin/.cookie
 """
 
 import argparse
+import base64
 import json
 import logging
+import os
 import re
 import socketserver
 import sys
@@ -245,6 +254,100 @@ def build_opener(socks_addr: str | None):
     return urllib.request.build_opener()
 
 
+# ---------------------------------------------------------------------------
+# Broadcast (signed tx -> your bitcoin node)
+# ---------------------------------------------------------------------------
+
+HEX_CHARS = set("0123456789abcdefABCDEF")
+
+
+class RpcError(Exception):
+    def __init__(self, code, message):
+        super().__init__(f"rpc error {code}: {message}")
+        self.code = code
+        self.message = message
+
+
+def is_valid_txhex(txhex: str) -> bool:
+    """Cheap sanity gate: hex, even-length, plausible raw tx size (>= 1 tx header)."""
+    if len(txhex) < 10 or len(txhex) % 2 != 0:
+        return False
+    return all(c in HEX_CHARS for c in txhex)
+
+
+def rpc_call(rpc_url: str, cookie_path: str, method: str, params: list,
+             timeout: int = 30):
+    """Call a bitcoind JSON-RPC method. Auth comes from the cookie file
+    bitcoind writes when it has no rpcuser in bitcoin.conf (cookie auth)."""
+    if not os.path.exists(cookie_path):
+        raise RpcError(-1, f"cookie not found at {cookie_path} — start bitcoind with -server")
+    with open(cookie_path, encoding="utf-8") as f:
+        user, _, password = f.read().strip().partition(":")
+    if not user or not password:
+        raise RpcError(-1, f"malformed cookie at {cookie_path}")
+    body = json.dumps({"jsonrpc": "1.0", "id": "surf-relay",
+                       "method": method, "params": params}).encode("utf-8")
+    token = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(
+        rpc_url, data=body,
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Basic {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            reply = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:300]
+        try:
+            inner = json.loads(body).get("error") or {}
+            raise RpcError(inner.get("code", e.code),
+                           inner.get("message", body))
+        except (ValueError, AttributeError):
+            raise RpcError(e.code, body)
+    except urllib.error.URLError as e:
+        raise RpcError(-1, f"cannot reach node at {rpc_url}: {e.reason}")
+    err = reply.get("error")
+    if err:
+        raise RpcError(err.get("code", -1), err.get("message", "unknown rpc error"))
+    return reply.get("result")
+
+
+def broadcast_tx(txhex: str, rpc_url: str, cookie_path: str, timeout: int = 30) -> str:
+    """Submit a raw transaction to the node via sendrawtransaction.
+    Returns the node-confirmed txid."""
+    txid = rpc_call(rpc_url, cookie_path, "sendrawtransaction", [txhex], timeout)
+    if not isinstance(txid, str) or len(txid) != 64:
+        raise RpcError(-1, f"unexpected txid reply: {txid!r}")
+    return txid
+
+
+def finalize_psbt(psbt_b64: str, rpc_url: str, cookie_path: str,
+                  timeout: int = 30) -> str:
+    """Ask bitcoind to finalize a signed PSBT (base64). Returns the raw
+    transaction hex. Raises if finalization is incomplete."""
+    result = rpc_call(rpc_url, cookie_path, "finalizepsbt", [psbt_b64, True], timeout)
+    if not isinstance(result, dict):
+        raise RpcError(-1, f"unexpected finalizepsbt reply: {result!r}")
+    if not result.get("complete"):
+        raise RpcError(-1, "finalizepsbt incomplete — missing signatures")
+    txhex = result.get("hex", "")
+    if not txhex:
+        raise RpcError(-1, "finalizepsbt returned no tx hex")
+    return txhex
+
+
+def submit_broadcast(payload: dict, rpc_url: str, cookie_path: str,
+                     timeout: int = 30) -> str:
+    """Accept either a raw `txhex` or a signed `psbt` (base64) and broadcast
+    it through the node. Returns the node-confirmed txid."""
+    txhex = str(payload.get("txhex", "")).strip()
+    psbt_b64 = str(payload.get("psbt", "")).strip()
+    if psbt_b64:
+        txhex = finalize_psbt(psbt_b64, rpc_url, cookie_path, timeout)
+    if not is_valid_txhex(txhex):
+        raise RpcError(-1, "bad tx — expected a raw signed transaction (txhex) or a signed PSBT (psbt)")
+    return broadcast_tx(txhex, rpc_url, cookie_path, timeout)
+
+
 def fetch_page(url: str, opener, timeout: int, max_bytes: int):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with opener.open(req, timeout=timeout) as resp:
@@ -289,6 +392,19 @@ class RelayHandler(socketserver.StreamRequestHandler):
                 continue
             if msg.get("type") == "ping":
                 self._reply({"type": "pong"})
+            elif msg.get("type") == "broadcast":
+                rid = str(msg.get("id", ""))
+                try:
+                    txid = submit_broadcast(msg, self.server.rpc_url,
+                                            self.server.rpc_cookie,
+                                            self.server.rpc_timeout)
+                    LOG.info("broadcast ok txid=%s", txid)
+                    self._reply({"type": "broadcast-result", "id": rid,
+                                 "txid": txid, "error": None})
+                except Exception as e:
+                    LOG.warning("broadcast failed: %s", e)
+                    self._reply({"type": "broadcast-result", "id": rid,
+                                 "txid": None, "error": str(e)})
             elif msg.get("type") == "fetch":
                 url = str(msg.get("url", "")).strip()
                 rid = str(msg.get("id", ""))
@@ -336,10 +452,14 @@ class RelayServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, addr, handler, opener, fetch_timeout, max_bytes):
+    def __init__(self, addr, handler, opener, fetch_timeout, max_bytes,
+                 rpc_url, rpc_cookie, rpc_timeout):
         self.opener = opener
         self.fetch_timeout = fetch_timeout
         self.max_bytes = max_bytes
+        self.rpc_url = rpc_url
+        self.rpc_cookie = rpc_cookie
+        self.rpc_timeout = rpc_timeout
         super().__init__(addr, handler)
 
 
@@ -353,6 +473,14 @@ def main():
     ap.add_argument("--timeout", type=int, default=30)
     ap.add_argument("--max-bytes", type=int, default=524288)
     ap.add_argument("--self-test", default=None, help="fetch a URL once, print blocks, exit")
+    ap.add_argument("--self-broadcast", default=None,
+                    help="submit a raw tx hex to the node once, print txid, exit")
+    ap.add_argument("--rpc-url", default=os.environ.get("SURF_RPC_URL", "http://127.0.0.1:8332"),
+                    help="bitcoind JSON-RPC endpoint (default: your node on 8332)")
+    ap.add_argument("--rpc-cookie",
+                    default=os.environ.get("SURF_RPC_COOKIE", os.path.expanduser("~/.bitcoin/.cookie")),
+                    help="bitcoind cookie file (default: ~/.bitcoin/.cookie)")
+    ap.add_argument("--rpc-timeout", type=int, default=30)
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -366,11 +494,19 @@ def main():
             print(f"  [{b['kind']}] {b['text'][:120]}")
         return 0
 
+    if args.self_broadcast:
+        txid = submit_broadcast({"txhex": args.self_broadcast}, args.rpc_url,
+                                args.rpc_cookie, args.rpc_timeout)
+        print(f"broadcast ok txid={txid}")
+        return 0
+
     opener = build_opener(args.socks)
     server = RelayServer((args.bind, args.port), RelayHandler, opener,
-                         args.timeout, args.max_bytes)
+                         args.timeout, args.max_bytes,
+                         args.rpc_url, args.rpc_cookie, args.rpc_timeout)
     via = f"via Tor {args.socks}" if args.socks else "clearnet"
-    LOG.info("surf-relay listening on %s:%d (%s)", args.bind, args.port, via)
+    LOG.info("surf-relay listening on %s:%d (%s) — broadcast node %s",
+             args.bind, args.port, via, args.rpc_url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

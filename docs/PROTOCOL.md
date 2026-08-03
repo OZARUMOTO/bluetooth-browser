@@ -79,6 +79,44 @@ Announced on startup so the gateway knows the browser is present.
 
 Heartbeat used by the TCP transport and future BLE bridge.
 
+### 2.6 `broadcast` (device → relay) and `broadcast-result` (relay → device)
+
+The relay is also a **transaction broadcast gateway**: a signed raw
+transaction is submitted to a Bitcoin node and the txid is returned. This is
+how Dojo Signer (or any KeyOS app) gets a signed spend on-chain without the
+device ever opening a socket and without trusting a third-party API.
+
+```json
+{ "type": "broadcast", "id": "12", "txhex": "02000000000101..." }
+{ "type": "broadcast", "id": "13", "psbt": "cHNidP8BAH0CAAAA..." }
+```
+
+- `txhex` — a fully-signed, finalized raw transaction (hex).
+- `psbt` — *or* a signed PSBT (base64). The relay asks its bitcoind to
+  finalize it (`finalizepsbt`) and then broadcasts the resulting hex. This is
+  the natural payload for signing devices, which produce PSBTs.
+- The relay sanity-checks the hex shape, then submits via
+  `sendrawtransaction` to the configured bitcoind (default `127.0.0.1:8332`,
+  cookie auth — see `--rpc-url` / `--rpc-cookie`). The node performs the real
+  validation.
+
+Reply:
+
+```json
+{ "type": "broadcast-result", "id": "12", "txid": "a1b2...", "error": null }
+```
+
+- `txid` — the node-confirmed txid on success, else `null`.
+- `error` — `null` on success, or a human-readable reason (bad hex, node
+  unreachable, `sendrawtransaction` rejection) for the device to display.
+
+### 2.7 `ready` → `broadcast` flow
+
+On hardware the relay runs on the gateway the companion fronts, so the same
+envelope protocol works end-to-end: sign on the device, transmit over QL to
+the companion, companion hands the envelope to the relay, relay submits to
+your node, txid rides back to the device.
+
 ## 3. Security properties
 
 | Property | Guarantee |
@@ -89,6 +127,7 @@ Heartbeat used by the TCP transport and future BLE bridge.
 | **Size caps** | Pages are truncated and block-count-limited; a hostile page can't exhaust device memory. |
 | **Your gateway, your rules** | Run the relay with `--socks` (Tor) for full privacy, or clearnet. |
 | **No keys involved** | The browser touches no seed, no wallet, no signing. |
+| **Broadcast privacy** | `broadcast` submits to **your node** via cookie auth — no public API, no third party |
 
 ## 4. Relay (gateway) deployment
 

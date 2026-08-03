@@ -12,10 +12,11 @@ BLUETOOTH BROWSER turns that constraint into a feature:
 │   • other KeyOS apps ask it to open URLs (shared web surface)            │
 └───────────────▲───────────────────────────────────────────────────────────┘
                 │ Quantum Link — JSON envelopes, channel "web-0" (BLE / sim)
-┌───────────────┴───────────────────────────────────────────────────────────┐
+┌───────────────▼───────────────────────────────────────────────────────────┐
 │  surf-relay  (your box / Mac / any gateway with internet)                 │
 │   • receives fetch requests · downloads pages (Tor or clearnet)           │
 │   • HTML → clean blocks: text, headings, links, quotes, code              │
+│   • broadcasts signed txs straight to YOUR bitcoin node (cookie auth)     │
 │   • scripts, styles, tracking and unsafe links stripped                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -37,6 +38,10 @@ exhaust device memory.
 - **Page blocks**: headings, paragraphs, tappable links, quotes, code,
   separators — a readable web on a 480×800 screen.
 - **Relay status**: pairing + relay-online indicators on the start page.
+- **Broadcast gateway** — a `broadcast` envelope carries a signed raw tx
+  (e.g. from **Dojo Signer**) to **your own bitcoind** over cookie auth; the
+  node-confirmed txid comes back in `broadcast-result`. No third party ever
+  sees the transaction.
 - **Demo mode**: without a relay (e.g., the simulator), the app still boots to
   a start page and can render sample pages so the UI is fully explorable.
 
@@ -58,6 +63,9 @@ exhaust device memory.
 python3 relay/surf_relay.py --port 8787                 # clearnet
 python3 relay/surf_relay.py --socks 127.0.0.1:9050      # through Tor
 python3 relay/surf_relay.py --self-test https://example.com
+python3 relay/surf_relay.py --self-broadcast <txhex>    # broadcast one tx via your node
+# defaults for the broadcast node: http://127.0.0.1:8332 + ~/.bitcoin/.cookie
+# (override with --rpc-url / --rpc-cookie, or SURF_RPC_URL / SURF_RPC_COOKIE)
 ```
 
 **App:** register `gui-app-browser` in the KeyOS workspace (workspace member +
@@ -91,6 +99,7 @@ second site, all on-device.
 | Safe links only | Absolute http(s) only; javascript:/data: dropped |
 | Size caps | 512 KB pages, bounded block count |
 | No keys | The browser never touches the seed or wallet |
+| Broadcast privacy | Signed txs go to **your node** (cookie auth) — never a public API |
 
 ## 📜 License
 
