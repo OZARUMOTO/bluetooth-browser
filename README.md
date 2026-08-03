@@ -64,6 +64,24 @@ python3 relay/surf_relay.py --self-test https://example.com
 xtask DEFAULT lists), then `cargo xtask run --hosted` and open
 **BLUETOOTH BROWSER** on the home screen.
 
+## 📸 It running on the Passport Prime simulator
+
+Real captures of **BLUETOOTH BROWSER** on the KeyOS hosted simulator (Passport
+Prime home screen + the browser itself):
+
+| Capture | What it shows |
+|---|---|
+| [`passportprimehomepage.png`](media/passportprimehomepage.png) | The BLUETOOTH BROWSER tile on the Passport home screen (teal, bluetooth icon) |
+| [`bluetoothbrowserhomepage.png`](media/bluetoothbrowserhomepage.png) | The browser start page — quick links + relay status |
+| [`openbrowser.png`](media/openbrowser.png) | The browse view — address bar, back/forward/home, rendered page blocks |
+| [`browser1.png`](media/browser1.png) · [`browser2.png`](media/browser2.png) · [`browser3.png`](media/browser3.png) | Page rendering in demo mode (example.com, IANA, bitcoin.org blocks) |
+
+### 🎬 Walkthrough video
+
+[`walkthroughallbrowsers.gif`](media/walkthroughallbrowsers.gif) — a full
+hands-on: start page → open a page → follow an in-page link → back → home →
+second site, all on-device.
+
 ## 🔐 Security
 
 | Property | Guarantee |
