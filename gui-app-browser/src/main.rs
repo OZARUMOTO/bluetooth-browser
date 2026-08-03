@@ -120,10 +120,13 @@ fn set_error(ui: &AppWindow, text: &str) {
 }
 
 /// Sync the back/forward affordances from HISTORY + HISTORY_INDEX.
+/// Back is enabled whenever any page has been loaded — on the first page it
+/// returns to the browser start page (like a home tab), so the user is never
+/// stuck on a page with no way back.
 fn sync_nav_state(ui: &AppWindow) {
     let hist = HISTORY.lock().unwrap();
     let idx = *HISTORY_INDEX.lock().unwrap();
-    let can_back = idx > 0;
+    let can_back = idx > 0 || !hist.is_empty();
     let can_forward = idx + 1 < hist.len();
     ui.global::<BrowserCallbacks>().set_can_go_back(can_back);
     ui.global::<BrowserCallbacks>().set_can_go_forward(can_forward);
@@ -367,18 +370,25 @@ fn app_main(_cx: AppContext, ui: AppWindow) {
         let ui_weak = ui_weak.clone();
         ui.global::<BrowserCallbacks>().on_go_back(move || {
             let ui = ui_weak.unwrap();
-            let url = {
+            let prev = {
                 let hist = HISTORY.lock().unwrap();
                 let mut idx = HISTORY_INDEX.lock().unwrap();
-                if *idx == 0 {
-                    None
-                } else {
+                if *idx > 0 {
                     *idx -= 1;
                     Some(hist[*idx].clone())
+                } else {
+                    None
                 }
             };
-            if let Some(url) = url {
-                request_page(&ui, &url, false);
+            match prev {
+                Some(url) => request_page(&ui, &url, false),
+                // First page of the session: back returns to the start page.
+                None => {
+                    ui.global::<Navigate>().invoke_home(NavigateOptions {
+                        replace: false,
+                        animate: Animate::None,
+                    });
+                }
             }
         });
     }
