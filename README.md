@@ -98,20 +98,34 @@ xtask DEFAULT lists), then `cargo xtask run --hosted` and open
 ## 📸 It running on the Passport Prime simulator
 
 Real captures of **BLUETOOTH BROWSER** on the KeyOS hosted simulator (Passport
-Prime home screen + the browser itself):
+Prime home screen + the browser itself). The captures are embedded below so
+they render directly on GitHub:
 
-| Capture | What it shows |
-|---|---|
-| [`passportprimehomepage.png`](media/passportprimehomepage.png) | The BLUETOOTH BROWSER tile on the Passport home screen (teal, bluetooth icon) |
-| [`bluetoothbrowserhomepage.png`](media/bluetoothbrowserhomepage.png) | The browser start page — quick links + relay status |
-| [`openbrowser.png`](media/openbrowser.png) | The browse view — address bar, back/forward/home, rendered page blocks |
-| [`browser1.png`](media/browser1.png) · [`browser2.png`](media/browser2.png) · [`browser3.png`](media/browser3.png) | Page rendering in demo mode (example.com, IANA, bitcoin.org blocks) |
+### Passport home screen
+
+![BLUETOOTH BROWSER tile on the Passport Prime home screen](media/passportprimehomepage.png)
+
+### Browser start page
+
+![BLUETOOTH BROWSER start page with quick links and relay status](media/bluetoothbrowserhomepage.png)
+
+### Browser view
+
+![BLUETOOTH BROWSER address bar and rendered page blocks](media/openbrowser.png)
+
+### Rendered page blocks
+
+| Example.com | IANA | bitcoin.org |
+|---|---|---|
+| ![Example.com page blocks](media/browser1.png) | ![IANA page blocks](media/browser2.png) | ![bitcoin.org page blocks](media/browser3.png) |
 
 ### 🎬 Walkthrough video
 
-[`walkthroughallbrowsers.gif`](media/walkthroughallbrowsers.gif) — a full
-hands-on: start page → open a page → follow an in-page link → back → home →
-second site, all on-device.
+The complete hands-on walkthrough is embedded here as an animated GIF:
+
+![BLUETOOTH BROWSER walkthrough: start page, navigation, links, back, home, and second site](media/walkthroughallbrowsers.gif)
+
+[Open the full-resolution walkthrough GIF](media/walkthroughallbrowsers.gif)
 
 ## 🔐 Security
 
