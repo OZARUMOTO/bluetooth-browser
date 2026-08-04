@@ -6,12 +6,18 @@ BLUETOOTH BROWSER turns that constraint into a feature:
 
 ```
 ┌────────────────────────────  Passport Prime  ────────────────────────────┐
-│  BLUETOOTH BROWSER (this app)                                            │
-│   • address bar · page blocks · links · back/forward · history           │
-│   • renders ONLY safe structured blocks — never HTML/JS                  │
-│   • other KeyOS apps ask it to open URLs (shared web surface)            │
+│  BLUETOOTH BROWSER / DOJO SIGNER (KeyOS apps)                            │
+│   • web via safe page blocks · cold-signs transactions                    │
 └───────────────▲───────────────────────────────────────────────────────────┘
-                │ Quantum Link — JSON envelopes, channel "web-0" (BLE / sim)
+                │ Quantum Link — JSON envelopes, channel "web-0"
+                │ BLE: NUS service (Nordic UART) — sealed GSTP envelopes
+┌───────────────▼───────────────────────────────────────────────────────────┐
+│  surf-bridge (bridge/, on your box)                                       │
+│   • BLE radio on the box pairs with the Passport like a companion app     │
+│   • unseals web-0 envelopes with your own XID identity (Kyber crypto)     │
+│   • forwards them over TCP — NO PHONE, NO ENVOY                           │
+└───────────────▲───────────────────────────────────────────────────────────┘
+                │ TCP 8787 — one JSON envelope per line
 ┌───────────────▼───────────────────────────────────────────────────────────┐
 │  surf-relay  (your box / Mac / any gateway with internet)                 │
 │   • receives fetch requests · downloads pages (Tor or clearnet)           │
@@ -46,6 +52,11 @@ exhaust device memory.
   same envelope, so the **Envoy companion** relays a device's signed PSBT to
   your node on real hardware (sign on device → BLE → companion → relay →
   your bitcoind).
+- **No-phone mode** — [`bridge/`](bridge/) is a Rust daemon that puts a BLE
+  radio on the box itself: the Passport pairs directly with your box (same
+  Quantum Link protocol Envoy uses) and the companion disappears entirely.
+  Hardware truth: the device is BLE-only, so *something* with BLE + internet
+  must carry traffic — the point is that thing can be your box, not a phone.
 - **Demo mode**: without a relay (e.g., the simulator), the app still boots to
   a start page and can render sample pages so the UI is fully explorable.
 
@@ -56,6 +67,11 @@ exhaust device memory.
 │   ├── src/main.rs         # fetch/page state machine, history, QL channel
 │   └── ui/                 # app.slint + home/browse pages + callbacks
 ├── relay/surf_relay.py     # the internet gateway (python3, stdlib only)
+├── bridge/                 # surf-bridge: BLE daemon (Rust) — phone-free mode
+│   ├── src/ble.rs          #   NUS transport (scan/connect/notify/write)
+│   ├── src/ql.rs           #   seal/unseal + BTP chunking (Foundation crypto)
+│   ├── src/router.rs       #   web-0 envelope routing → surf-relay
+│   └── src/identity.rs     #   persisted bridge identity + device XID
 └── docs/PROTOCOL.md        # the companion ↔ device wire spec
 ```
 
