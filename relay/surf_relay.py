@@ -26,6 +26,7 @@ Usage:
     python3 surf_relay.py --socks 127.0.0.1:9050      # everything via Tor
     python3 surf_relay.py --self-test https://example.com   # one-shot fetch+convert
     python3 surf_relay.py --self-broadcast <txhex>          # one-shot broadcast via your node
+    python3 surf_relay.py --self-qrng 32                    # one-shot: 32 quantum bytes from ANU
     python3 surf_relay.py --rpc-url http://127.0.0.1:8332 --rpc-cookie ~/.bitcoin/.cookie
 """
 
@@ -371,6 +372,58 @@ def fetch_page(url: str, opener, timeout: int, max_bytes: int):
 
 
 # ---------------------------------------------------------------------------
+# QRNG (real quantum entropy -> device seed ceremony)
+# ---------------------------------------------------------------------------
+
+ANU_QRNG_URL = "https://qrng.anu.edu.au/API/jsonI.php"
+ANU_MAX_LENGTH = 1024
+# ANU hard-limits to 1 request/minute regardless of size, so cache the last
+# fetch for ~55s and serve repeats from it — the bytes are still genuinely
+# quantum, just reused within the window (matching the companion's fetch-once
+# strategy). A ceremony needs only 16 (12-word) or 32 (24-word) bytes.
+QRNG_CACHE_SECONDS = 55.0
+_qrng_cache: dict = {"at": 0.0, "data": b""}
+
+
+def fetch_anu_entropy(length: int = 64, opener=None, timeout: int = 30) -> bytes:
+    """Fetch `length` genuinely quantum bytes from the ANU QRNG API (vacuum
+    fluctuations measured at the Australian National University). One request
+    is rate-limited to ~1/min, so keep `length` at what the ceremony needs
+    (16 for 12 words, 32 for 24 words). Returns raw bytes.
+
+    `opener` is the relay's opener (honors --socks / ignores env proxies),
+    matching every other outbound path in this file."""
+    if not 1 <= length <= ANU_MAX_LENGTH:
+        raise ValueError(f"ANU QRNG length must be 1..{ANU_MAX_LENGTH}")
+    import time as _time
+    now = _time.monotonic()
+    if now - _qrng_cache["at"] < QRNG_CACHE_SECONDS:
+        LOG.info("qrng cache hit: %d bytes (fresh %ds ago)", len(_qrng_cache["data"]),
+                 int(now - _qrng_cache["at"]))
+        return _qrng_cache["data"][:length]
+    # Always fetch the maximum ANU allows in one request (1024) and cache it:
+    # the API is hard-limited to 1 request/min regardless of size, so a single
+    # call covers every ceremony (12/24 words) plus any retries within the
+    # window. This mirrors the companion's fetch-once/stream-in-chunks design.
+    fetch_len = ANU_MAX_LENGTH if length < ANU_MAX_LENGTH else length
+    url = f"{ANU_QRNG_URL}?length={fetch_len}&type=uint8"
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with (opener or urllib.request.build_opener()).open(req, timeout=timeout) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
+    if not isinstance(body, dict) or body.get("success") is not True:
+        raise ValueError("ANU QRNG returned an unexpected payload")
+    data = body.get("data")
+    if not isinstance(data, list) or len(data) != fetch_len:
+        raise ValueError(f"ANU QRNG returned {len(data) if isinstance(data, list) else '?'} bytes, wanted {fetch_len}")
+    if not all(isinstance(b, int) and 0 <= b <= 255 for b in data):
+        raise ValueError("ANU QRNG returned invalid byte values")
+    raw = bytes(data)
+    _qrng_cache["at"] = now
+    _qrng_cache["data"] = raw
+    return raw[:length]
+
+
+# ---------------------------------------------------------------------------
 # Server: one JSON envelope per line
 # ---------------------------------------------------------------------------
 
@@ -406,6 +459,19 @@ class RelayHandler(socketserver.StreamRequestHandler):
                     LOG.warning("broadcast failed: %s", e)
                     self._reply({"type": "broadcast-result", "id": rid,
                                  "txid": None, "error": str(e)})
+            elif msg.get("type") == "qrng":
+                rid = str(msg.get("id", ""))
+                try:
+                    length = int(msg.get("length", 64))
+                    data = fetch_anu_entropy(length, opener, timeout)
+                    LOG.info("qrng ok length=%d", len(data))
+                    self._reply({"type": "qrng-result", "id": rid,
+                                 "bytes": data.hex(), "length": len(data),
+                                 "error": None})
+                except Exception as e:
+                    LOG.warning("qrng failed: %s", e)
+                    self._reply({"type": "qrng-result", "id": rid,
+                                 "bytes": "", "length": 0, "error": str(e)})
             elif msg.get("type") == "fetch":
                 url = str(msg.get("url", "")).strip()
                 rid = str(msg.get("id", ""))
@@ -555,6 +621,8 @@ def main():
     ap.add_argument("--self-test", default=None, help="fetch a URL once, print blocks, exit")
     ap.add_argument("--self-broadcast", default=None,
                     help="submit a raw tx hex to the node once, print txid, exit")
+    ap.add_argument("--self-qrng", type=int, nargs="?", const=64, default=None,
+                    help="fetch N quantum bytes from ANU once, print hex, exit")
     ap.add_argument("--rpc-url", default=os.environ.get("SURF_RPC_URL", "http://127.0.0.1:8332"),
                     help="bitcoind JSON-RPC endpoint (default: your node on 8332)")
     ap.add_argument("--rpc-cookie",
@@ -580,6 +648,11 @@ def main():
         txid = submit_broadcast({"txhex": args.self_broadcast}, args.rpc_url,
                                 args.rpc_cookie, args.rpc_timeout)
         print(f"broadcast ok txid={txid}")
+        return 0
+
+    if args.self_qrng is not None:
+        data = fetch_anu_entropy(args.self_qrng, build_opener(args.socks))
+        print(f"qrng ok length={len(data)} bytes={data.hex()}")
         return 0
 
     opener = build_opener(args.socks)

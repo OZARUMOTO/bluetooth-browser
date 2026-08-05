@@ -115,6 +115,39 @@ Reply:
 > the companion on hardware, so a device running only the browser will never
 > see `broadcast-result` on its channel.
 
+### 2.7 `qrng` (device → relay) and `qrng-result` (relay → device)
+
+The relay is also a **quantum entropy gateway**: it fetches genuinely quantum
+bytes from the ANU QRNG API (vacuum fluctuations) and returns them as hex.
+This is how the onboarding seed ceremony gets a real quantum mix-in on the
+hosted simulator with **no phone and no companion app** — the box's relay IS
+the companion.
+
+```json
+{ "type": "qrng", "id": "9", "length": 32 }
+```
+
+- `length` — bytes wanted, `1..1024` (default 64). ANU hard-limits to ~1
+  request/min regardless of size, so the relay fetches the full 1024 in one
+  call and caches it for 55s — any repeat request (any length) inside that
+  window is served from the same genuine quantum bytes. A ceremony needs
+  only 16 (12 words) or 32 (24 words).
+
+Reply:
+
+```json
+{ "type": "qrng-result", "id": "9", "bytes": "0f76f3e5e9420c4f...", "length": 32, "error": null }
+```
+
+- `bytes` — lowercase hex of the raw quantum bytes, `""` on failure.
+- `error` — `null` on success, or a human-readable reason (ANU unreachable,
+  rate-limited, bad length) for the device to display.
+
+The device feeds the bytes through NIST SP 800-90B online health tests
+(RCT/APT) and mixes them with the dice rolls, so a corrupt or hostile feed
+can never weaken the seed. On hardware the same envelope is fronted by the
+BLE bridge and rides Quantum Link as `QrngEntropyChunk` instead.
+
 ### 2.8 HTTP surface (companion apps): `POST /broadcast`
 
 The same envelope is exposed over plain HTTP for companion apps (which speak
@@ -141,7 +174,7 @@ The device's settings UI probes the gateway with `ping` and expects `pong` to
 show relay online/offline — the same envelope the TCP transport uses as a
 heartbeat.
 
-### 2.7 `ready` → `broadcast` flow
+### 2.10 `ready` → `broadcast` flow
 
 On hardware the relay runs on the gateway the companion fronts, so the same
 envelope protocol works end-to-end: sign on the device, transmit over QL to
